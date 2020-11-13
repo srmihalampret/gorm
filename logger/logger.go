@@ -39,7 +39,7 @@ const (
 
 // Writer log writer interface
 type Writer interface {
-	Printf(string, ...interface{})
+	Printf(LogLevel, string, ...interface{})
 }
 
 type Config struct {
@@ -58,8 +58,8 @@ type Interface interface {
 }
 
 var (
-	Discard = New(log.New(ioutil.Discard, "", log.LstdFlags), Config{})
-	Default = New(log.New(os.Stdout, "\r\n", log.LstdFlags), Config{
+	Discard = New(log2writer(log.New(ioutil.Discard, "", log.LstdFlags)), Config{})
+	Default = New(log2writer(log.New(os.Stdout, "\r\n", log.LstdFlags)), Config{
 		SlowThreshold: 200 * time.Millisecond,
 		LogLevel:      Warn,
 		Colorful:      true,
@@ -115,21 +115,21 @@ func (l *logger) LogMode(level LogLevel) Interface {
 // Info print info
 func (l logger) Info(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= Info {
-		l.Printf(l.infoStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+		l.Printf(Info, l.infoStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
 	}
 }
 
 // Warn print warn messages
 func (l logger) Warn(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= Warn {
-		l.Printf(l.warnStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+		l.Printf(Warn, l.warnStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
 	}
 }
 
 // Error print error messages
 func (l logger) Error(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= Error {
-		l.Printf(l.errStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+		l.Printf(Error, l.errStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
 	}
 }
 
@@ -141,24 +141,24 @@ func (l logger) Trace(ctx context.Context, begin time.Time, fc func() (string, i
 		case err != nil && l.LogLevel >= Error:
 			sql, rows := fc()
 			if rows == -1 {
-				l.Printf(l.traceErrStr, utils.FileWithLineNum(), err, float64(elapsed.Nanoseconds())/1e6, "-", sql)
+				l.Printf(Error, l.traceErrStr, utils.FileWithLineNum(), err, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 			} else {
-				l.Printf(l.traceErrStr, utils.FileWithLineNum(), err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+				l.Printf(Error, l.traceErrStr, utils.FileWithLineNum(), err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 			}
 		case elapsed > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= Warn:
 			sql, rows := fc()
 			slowLog := fmt.Sprintf("SLOW SQL >= %v", l.SlowThreshold)
 			if rows == -1 {
-				l.Printf(l.traceWarnStr, utils.FileWithLineNum(), slowLog, float64(elapsed.Nanoseconds())/1e6, "-", sql)
+				l.Printf(Warn, l.traceWarnStr, utils.FileWithLineNum(), slowLog, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 			} else {
-				l.Printf(l.traceWarnStr, utils.FileWithLineNum(), slowLog, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+				l.Printf(Warn, l.traceWarnStr, utils.FileWithLineNum(), slowLog, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 			}
 		case l.LogLevel >= Info:
 			sql, rows := fc()
 			if rows == -1 {
-				l.Printf(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, "-", sql)
+				l.Printf(Info, l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, "-", sql)
 			} else {
-				l.Printf(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, rows, sql)
+				l.Printf(Info, l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, rows, sql)
 			}
 		}
 	}
@@ -180,4 +180,16 @@ func (l *traceRecorder) Trace(ctx context.Context, begin time.Time, fc func() (s
 	l.BeginAt = begin
 	l.SQL, l.RowsAffected = fc()
 	l.Err = err
+}
+
+type defaultWriter struct {
+	logLogger *log.Logger
+}
+
+func (w defaultWriter) Printf(ll LogLevel, str string, other ...interface{}) {
+	w.logLogger.Printf(str, other...)
+}
+
+func log2writer(l *log.Logger) Writer {
+	return &defaultWriter{logLogger: l}
 }
